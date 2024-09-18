@@ -5,6 +5,7 @@ from datetime import datetime
 import pytz
 import logging
 
+logging.basicConfig(level=logging.INFO)
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -87,22 +88,40 @@ class RedisDataHandler:
         qb = self.r.get(key)
         logger.debug(f"redis_client.get({key}) = {qb.decode('utf-8')}")
 
-    def retrieve_dataframe_from_redis(self, key):
+    def retrieve_dataframe_from_redis(self, key, timestamp_col='timestamp'):
         """
         Retrieve data from a Redis list and convert it into a DataFrame.
 
         Parameters:
         - key: The Redis key where the DataFrame rows are stored.
+        - timestamp_col: The column name to be used as the timestamp for sorting and de-duplication. 
+                        Default is 'timestamp'.
 
         Returns:
         - DataFrame: A DataFrame created from the Redis list.
         """
-        data = self.r.lrange(key, 0, -1)  # Get all elements from the list
-        rows = [json.loads(row.decode('utf-8')) for row in data]  # Convert JSON strings to dictionaries
-        df = pd.DataFrame(rows)  # Create a DataFrame from the dictionaries
-        df['timestamp'] = pd.to_datetime(df['timestamp'])  # Convert timestamps
-        df = df.drop_duplicates(subset=['timestamp'], keep='last')  # Remove duplicates
-        df = df.sort_values(by='timestamp')  # Sort by timestamp
+        logger.info(f"Retrieving DataFrame from Redis key: {key} with timestamp column: {timestamp_col}")
+        # Get all elements from the Redis list
+        data = self.r.lrange(key, 0, -1)
+        
+        # Convert the list of JSON strings to a list of dictionaries
+        rows = [json.loads(row.decode('utf-8')) for row in data]
+        
+        # Create a DataFrame from the list of dictionaries
+        df = pd.DataFrame(rows)
+        
+        if timestamp_col not in df.columns:
+            raise ValueError(f"Column '{timestamp_col}' not found in the data.")
+        
+        # Convert the specified timestamp column to a datetime object
+        df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+        
+        # Remove duplicates based on the specified timestamp column and keep the last occurrence
+        df = df.drop_duplicates(subset=[timestamp_col], keep='last')
+        
+        # Sort the DataFrame by the specified timestamp column
+        df = df.sort_values(by=timestamp_col)
+        
         return df
 
     def retrieve_json_from_redis(self, key):
@@ -176,6 +195,7 @@ class RedisDataHandler:
         Get a DataFrame containing statistics for all keys in the Redis database.
         """
         all_keys = self.get_all_keys()
+        logger.debug(f"Retrieved all keys from Redis: {all_keys}")
         data = []
         for key in all_keys:
             key_str = key.decode('utf-8')
