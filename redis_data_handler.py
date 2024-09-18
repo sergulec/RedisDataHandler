@@ -22,8 +22,14 @@ class RedisDataHandler:
     - Manage Redis keys, including deleting keys and getting statistics.
     """
     
-    def __init__(self, host='localhost', port=6379, db=0):
-        self.r = redis.Redis(host=host, port=port, db=db)
+    def __init__(self, host='localhost', port=6379, db=0, password=None):
+        """
+        Initialize the RedisDataHandler with the specified Redis connection details.
+        """
+        if password:
+            self.r = redis.Redis(host=host, port=port, db=db, password=password)
+        else:
+            self.r = redis.Redis(host=host, port=port, db=db)
         self.est = pytz.timezone('US/Eastern')
         self.today = datetime.now(self.est).strftime("%Y%m%d")
         logger.debug(f"Connected to Redis at {host}:{port}, db: {db}")
@@ -158,6 +164,27 @@ class RedisDataHandler:
             'Deleted Keys Count': deleted_count,
             'Non-existent Keys': non_existent_keys
         }
+
+    def get_all_keys(self):
+        """
+        Get a list of all keys in the Redis database.
+        """
+        return self.r.keys('*')
+
+    def get_keys_dataframe(self):
+        """
+        Get a DataFrame containing statistics for all keys in the Redis database.
+        """
+        all_keys = self.get_all_keys()
+        data = []
+        for key in all_keys:
+            key_str = key.decode('utf-8')
+            stats = self.get_key_stats(key_str)
+            data.append((key_str, stats['Type'], stats['Number of Items'], stats['Size (Bytes)'], stats['Size (MB)']))
+
+        df = pd.DataFrame(data, columns=['Key', 'Type', 'Number of Items', 'Size (Bytes)', 'Size (MB)'])
+        df = df.sort_values(by='Size (MB)', ascending=True)
+        return df
 
     def get_key_stats(self, key):
         """
